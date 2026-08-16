@@ -23,13 +23,8 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
 
-    # build.gradle ফোল্ডার খুঁজে সরাসরি gradle কোড দিয়ে বিল্ড করবে
     - name: Build Debug APK
-      run: |
-        BUILD_FILE=$(find . -name "build.gradle*" | head -n 1)
-        PROJECT_DIR=$(dirname "$BUILD_FILE")
-        cd "$PROJECT_DIR"
-        gradle assembleDebug
+      run: gradle assembleDebug
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
