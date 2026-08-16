@@ -23,17 +23,13 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
 
-    # সাব-ফোল্ডার থাকলে সব জায়গায় খুঁজে gradlew চ্যালাবে
-    - name: Grant execute permission for gradlew
-      run: find . -name "gradlew" -exec chmod +x {} +
-
-    # আসল প্রজেক্ট ফোল্ডারে গিয়ে বিল্ড করবে
+    # build.gradle ফোল্ডার খুঁজে সরাসরি gradle কোড দিয়ে বিল্ড করবে
     - name: Build Debug APK
       run: |
-        GRADLEW_PATH=$(find . -name "gradlew" | head -n 1)
-        PROJECT_DIR=$(dirname "$GRADLEW_PATH")
+        BUILD_FILE=$(find . -name "build.gradle*" | head -n 1)
+        PROJECT_DIR=$(dirname "$BUILD_FILE")
         cd "$PROJECT_DIR"
-        ./gradlew assembleDebug
+        gradle assembleDebug
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
