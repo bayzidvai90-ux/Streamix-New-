@@ -30,71 +30,122 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses || true
 
-      - name: Find and extract project
+      - name: Locate Android project
         shell: bash
         run: |
           set -e
 
-          echo "Repository contents:"
-          find . -maxdepth 3 -type f | head -200
+          echo "Repository:"
+          find . -maxdepth 3 -type f | sort | head -200
 
           PROJECT_DIR=""
 
-          # First check whether Gradle project already exists
-          if [ -f "./gradlew" ]; then
+          # Case 1: project is already in repository root
+          if [ -f "./settings.gradle.kts" ] || [ -f "./settings.gradle" ]; then
             PROJECT_DIR="."
-          else
-            # Find ZIP files
+          fi
+
+          # Case 2: repository contains a ZIP
+          if [ -z "$PROJECT_DIR" ]; then
             ZIP_FILE=$(find . -maxdepth 3 -type f -iname "*.zip" | head -1 || true)
 
             if [ -n "$ZIP_FILE" ]; then
-              echo "Found ZIP: $ZIP_FILE"
+              echo "Found project ZIP: $ZIP_FILE"
 
+              rm -rf extracted
               mkdir -p extracted
               unzip -q "$ZIP_FILE" -d extracted
 
-              echo "Extracted files:"
-              find extracted -maxdepth 5 -type f | head -250
+              echo "Searching extracted project..."
 
-              # Find gradlew inside extracted project
-              GRADLEW=$(find extracted -type f -name "gradlew" | head -1 || true)
+              SETTINGS_FILE=$(find extracted \
+                -type f \( -name "settings.gradle.kts" -o -name "settings.gradle" \) \
+                | head -1 || true)
 
-              if [ -n "$GRADLEW" ]; then
-                PROJECT_DIR=$(dirname "$GRADLEW")
+              if [ -n "$SETTINGS_FILE" ]; then
+                PROJECT_DIR=$(dirname "$SETTINGS_FILE")
               fi
             fi
           fi
 
           if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: Android Gradle project not found."
-            echo "The repository must contain gradlew or an Android project ZIP containing gradlew."
+            echo "ERROR: Android Gradle project was not found."
             exit 1
           fi
 
           PROJECT_DIR=$(cd "$PROJECT_DIR" && pwd)
 
-          echo "Android project found at:"
-          echo "$PROJECT_DIR"
-
+          echo "PROJECT_DIR=$PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Make Gradle executable
-        run: chmod +x "$PROJECT_DIR/gradlew"
-
-      - name: Verify Gradle project
+      - name: Check Gradle configuration
+        shell: bash
         run: |
-          test -f "$PROJECT_DIR/gradlew"
-          test -f "$PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties"
-          echo "Gradle project verified."
+          set -e
+
+          echo "Project:"
+          ls -la "$PROJECT_DIR"
+
+          if [ ! -f "$PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties" ]; then
+            echo "ERROR: gradle-wrapper.properties not found."
+            exit 1
+          fi
+
+          echo "Gradle wrapper properties:"
+          cat "$PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties"
+
+      - name: Install Gradle from wrapper properties
+        shell: bash
+        run: |
+          set -e
+
+          PROPERTIES="$PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties"
+
+          DISTRIBUTION_URL=$(grep '^distributionUrl=' "$PROPERTIES" \
+            | cut -d'=' -f2- \
+            | sed 's/\\//g')
+
+          if [ -z "$DISTRIBUTION_URL" ]; then
+            echo "ERROR: distributionUrl not found."
+            exit 1
+          fi
+
+          echo "Gradle distribution:"
+          echo "$DISTRIBUTION_URL"
+
+          mkdir -p "$HOME/gradle"
+
+          curl -fL "$DISTRIBUTION_URL" -o "$HOME/gradle/gradle.zip"
+
+          unzip -q "$HOME/gradle/gradle.zip" -d "$HOME/gradle"
+
+          GRADLE_HOME=$(find "$HOME/gradle" -maxdepth 1 -type d -name "gradle-*" | head -1)
+
+          if [ -z "$GRADLE_HOME" ]; then
+            echo "ERROR: Gradle distribution could not be extracted."
+            exit 1
+          fi
+
+          echo "GRADLE_HOME=$GRADLE_HOME"
+          echo "$GRADLE_HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Gradle
+        run: |
+          gradle --version
 
       - name: Build Debug APK
         working-directory: ${{ env.PROJECT_DIR }}
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: |
+          gradle assembleDebug --no-daemon --stacktrace
 
       - name: Find APK
+        shell: bash
         run: |
-          echo "APK files:"
-          find "$PROJECT_DIR" -type f -name "*.apk" -print
+          echo "Generated APK files:"
+          find "$PROJECT_DIR" \
+            -type f \
+            -path "*/build/outputs/apk/debug/*.apk" \
+            -print
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
