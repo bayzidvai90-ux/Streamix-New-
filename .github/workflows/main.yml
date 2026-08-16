@@ -23,11 +23,22 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug
+    - name: Locate Project Root & Build
+      run: |
+        BUILD_FILE=$(find . -maxdepth 3 -name "build.gradle" -o -name "build.gradle.kts" | head -n 1)
+        if [ -z "$BUILD_FILE" ]; then
+          echo "No build.gradle found!"
+          exit 1
+        fi
+        PROJECT_DIR=$(dirname "$BUILD_FILE")
+        echo "Building inside directory: $PROJECT_DIR"
+        cd "$PROJECT_DIR"
+        if [ -f "./gradlew" ]; then
+          chmod +x gradlew
+          ./gradlew assembleDebug
+        else
+          gradle assembleDebug
+        fi
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
